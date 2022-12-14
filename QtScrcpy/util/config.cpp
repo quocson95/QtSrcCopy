@@ -2,7 +2,10 @@
 #include <QFileInfo>
 #include <QSettings>
 #include <QDebug>
-
+#include <QDesktopWidget>
+#include <QApplication>
+#include <QScreen>
+#include <QWindow>
 #include "config.h"
 #ifdef Q_OS_OSX
 #include "path.h"
@@ -112,7 +115,7 @@ Config::Config(QObject *parent) : QObject(parent)
     m_userData = new QSettings(getConfigPath() + "/userdata.ini", QSettings::IniFormat);
     m_userData->setIniCodec("UTF-8");
 
-    qDebug()<<m_userData->childGroups();
+    qDebug()<<m_userData->childGroups();    
 }
 
 Config &Config::getInstance()
@@ -201,12 +204,24 @@ void Config::setRect(const QString &serial, const QRect &rc)
 QRect Config::getRect(const QString &serial)
 {
     QRect rc;
-    m_userData->beginGroup(serial);
-    rc.setX(m_userData->value(SERIAL_WINDOW_RECT_KEY_X, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
-    rc.setY(m_userData->value(SERIAL_WINDOW_RECT_KEY_Y, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
-    rc.setWidth(m_userData->value(SERIAL_WINDOW_RECT_KEY_W, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
-    rc.setHeight(m_userData->value(SERIAL_WINDOW_RECT_KEY_H, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
-    m_userData->endGroup();
+//    m_userData->beginGroup(serial);
+//    rc.setX(m_userData->value(SERIAL_WINDOW_RECT_KEY_X, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+//    rc.setY(m_userData->value(SERIAL_WINDOW_RECT_KEY_Y, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+//    rc.setWidth(m_userData->value(SERIAL_WINDOW_RECT_KEY_W, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+//    rc.setHeight(m_userData->value(SERIAL_WINDOW_RECT_KEY_H, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+//    m_userData->endGroup();
+    currentView = (currentView+1)%(row*col);
+    auto screen = QApplication::focusWindow()->screen();
+    auto geo = screen->geometry();
+    auto w = geo.width()/col;
+    auto h = geo.height()/row;
+
+    auto hang = currentView / col;
+    auto cot = (currentView - hang*col);
+    rc.setX(geo.x() + w*cot);
+    rc.setY(geo.y() +h*hang);
+    rc.setWidth(w);
+    rc.setHeight(h);
     return rc;
 }
 
@@ -222,7 +237,7 @@ QString Config::getNickName(const QString &serial)
 {
     QString name;
     m_userData->beginGroup(serial);
-    name = m_userData->value(SERIAL_NICK_NAME_KEY, SERIAL_NICK_NAME_DEF).toString();
+    name = m_userData->value(SERIAL_NICK_NAME_KEY, SERIAL_NICK_NAME_DEF).toString();    
     m_userData->endGroup();
     return name;
 }

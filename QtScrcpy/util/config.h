@@ -67,6 +67,9 @@ private:
     static QString s_configPath;
     QPointer<QSettings> m_settings;
     QPointer<QSettings> m_userData;
+    int col = 9;
+    int row = 3;
+    int currentView = -1;
 };
 
 #endif // CONFIG_H

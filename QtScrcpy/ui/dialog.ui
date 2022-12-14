@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1293</width>
-    <height>454</height>
+    <width>1369</width>
+    <height>586</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -1019,6 +1019,13 @@
              </widget>
             </item>
            </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="startAllServerBtn">
+           <property name="text">
+            <string>Start all devices</string>
+           </property>
           </widget>
          </item>
         </layout>

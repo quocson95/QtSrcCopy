@@ -8,6 +8,7 @@
 #include <QSystemTrayIcon>
 #include <QListWidget>
 #include <QTimer>
+#include <QQueue>
 
 
 #include "adbprocess.h"
@@ -67,6 +68,8 @@ private slots:
 
     void on_autoUpdatecheckBox_toggled(bool checked);
 
+    void on_startAllServerBtn_clicked();
+
 private:
     bool checkAdbRun();
     void initUI();
@@ -78,6 +81,11 @@ private:
     int findDeviceFromeSerialBox(bool wifi);
     quint32 getBitRate();
     const QString &getServerPath();
+
+    void startServerDevice(int index);
+
+    void startTimer(int *k, int msec);
+    void killTimer(int *k);
 
 protected:
     void closeEvent(QCloseEvent *event);
@@ -91,6 +99,12 @@ private:
     QAction *m_quit;
     AudioOutput m_audioOutput;
     QTimer m_autoUpdatetimer;
+    QQueue<int> m_serial_wait_open;
+    int timer_check_serial_wait_open;
+
+    // QObject interface
+protected:
+    void timerEvent(QTimerEvent *event);
 };
 
 #endif // DIALOG_H

@@ -4,6 +4,7 @@
 #include <QKeyEvent>
 #include <QTime>
 #include <QTimer>
+#include <QTimerEvent>
 
 #include "config.h"
 #include "dialog.h"
@@ -16,6 +17,9 @@
 #endif
 
 QString s_keyMapPath = "";
+
+constexpr int TimeoutForceStartNewDevice = 5000; //msec
+
 
 const QString &getKeyMapPath()
 {
@@ -122,8 +126,11 @@ Dialog::Dialog(QWidget *parent) : QWidget(parent), ui(new Ui::Widget)
     });
     connect(m_hideIcon, &QSystemTrayIcon::activated, this, &Dialog::slotActivated);
 
-    connect(&qsc::IDeviceManage::getInstance(), &qsc::IDeviceManage::deviceConnected, this, &Dialog::onDeviceConnected);
-    connect(&qsc::IDeviceManage::getInstance(), &qsc::IDeviceManage::deviceDisconnected, this, &Dialog::onDeviceDisconnected);
+    connect(&qsc::IDeviceManage::getInstance(),
+            &qsc::IDeviceManage::deviceConnected, this, &Dialog::onDeviceConnected);
+    connect(&qsc::IDeviceManage::getInstance(),
+            &qsc::IDeviceManage::deviceDisconnected, this, &Dialog::onDeviceDisconnected);
+    timer_check_serial_wait_open = -1;
 }
 
 Dialog::~Dialog()
@@ -131,6 +138,7 @@ Dialog::~Dialog()
     qDebug() << "~Dialog()";
     updateBootConfig(false);
     qsc::IDeviceManage::getInstance().disconnectAllDevice();
+
     delete ui;
 }
 
@@ -279,6 +287,18 @@ void Dialog::closeEvent(QCloseEvent *event)
     event->ignore();
 }
 
+void Dialog::timerEvent(QTimerEvent *event)
+{
+    if (event->timerId() == timer_check_serial_wait_open) {
+        if (m_serial_wait_open.empty()) {
+            killTimer(&timer_check_serial_wait_open);
+            return;
+        }
+        startServerDevice(m_serial_wait_open.dequeue());
+        return;
+    }   
+}
+
 void Dialog::on_updateDevice_clicked()
 {
     if (checkAdbRun()) {
@@ -289,9 +309,8 @@ void Dialog::on_updateDevice_clicked()
 }
 
 void Dialog::on_startServerBtn_clicked()
-{
-    outLog("start server...", false);
-
+{   
+    outLog("start server..." +  ui->serialBox->currentText().trimmed() , false);
     // this is ok that "original" toUshort is 0
     quint16 videoSize = ui->maxSizeBox->currentText().trimmed().toUShort();
     qsc::DeviceParams params;
@@ -467,17 +486,20 @@ void Dialog::onDeviceConnected(bool success, const QString &serial, const QStrin
     QRect rc = Config::getInstance().getRect(serial);
     bool rcVer = rc.height() > rc.width();
     // same width/height rate
-    if (rc.isValid() && (deviceVer == rcVer)) {
+    if (rc.isValid()) {
         // mark: resize is for fix setGeometry magneticwidget bug
         videoForm->resize(rc.size());
         videoForm->setGeometry(rc);
     }
 
     GroupController::instance().addDevice(serial);
+    if (!m_serial_wait_open.empty()) {
+        startServerDevice(m_serial_wait_open.dequeue());
+    }
 }
 
 void Dialog::onDeviceDisconnected(QString serial)
-{
+{   
     GroupController::instance().removeDevice(serial);
     auto device = qsc::IDeviceManage::getInstance().getDevice(serial);
     if (!device) {
@@ -707,6 +729,64 @@ const QString &Dialog::getServerPath()
     return serverPath;
 }
 
+void Dialog::startServerDevice(int index)
+{
+    if (index >= ui->serialBox->count()) {
+        m_serial_wait_open.clear();
+        return;
+    }
+    auto serial = ui->serialBox->itemText(index).trimmed();
+    outLog("Start server device, serial: " + serial, true);
+    // this is ok that "original" toUshort is 0
+    quint16 videoSize = ui->maxSizeBox->itemText(index).trimmed().toUShort();
+    qsc::DeviceParams params;
+    params.serial = serial;
+    params.maxSize = videoSize;
+    params.bitRate = getBitRate();
+    // on devices with Android >= 10, the capture frame rate can be limited
+    params.maxFps = static_cast<quint32>(Config::getInstance().getMaxFps());
+    params.closeScreen = ui->closeScreenCheck->isChecked();
+    params.useReverse = ui->useReverseCheck->isChecked();
+    params.display = !ui->notDisplayCheck->isChecked();
+    params.renderExpiredFrames = Config::getInstance().getRenderExpiredFrames();
+    params.lockVideoOrientation = ui->lockOrientationBox->currentIndex() - 1;
+    params.stayAwake = ui->stayAwakeCheck->isChecked();
+    params.recordFile = ui->recordScreenCheck->isChecked();
+    params.recordPath = ui->recordPathEdt->text().trimmed();
+    params.recordFileFormat = ui->formatBox->itemText(index).trimmed();
+    params.serverLocalPath = getServerPath();
+    params.serverRemotePath = Config::getInstance().getServerPath();
+    params.pushFilePath = Config::getInstance().getPushFilePath();
+    params.gameScript = getGameScript(ui->gameBox->itemText(index));
+    params.serverVersion = Config::getInstance().getServerVersion();
+    params.logLevel = Config::getInstance().getLogLevel();
+    params.codecOptions = Config::getInstance().getCodecOptions();
+    params.codecName = Config::getInstance().getCodecName();
+
+    qsc::IDeviceManage::getInstance().connectDevice(params);
+}
+
+void Dialog::startTimer(int *k, int msec)
+{
+    if (k == nullptr) {
+        return;
+    }
+    killTimer(k);
+    *k = QWidget::startTimer(msec);
+}
+
+void Dialog::killTimer(int *k)
+{
+    if (k == nullptr) {
+        return;
+    }
+    if (*k < 0) {
+        return;
+    }
+    QWidget::killTimer(*k);
+    *k = -1;
+}
+
 void Dialog::on_startAudioBtn_clicked()
 {
     if (ui->serialBox->count() == 0) {
@@ -739,3 +819,22 @@ void Dialog::on_autoUpdatecheckBox_toggled(bool checked)
         m_autoUpdatetimer.stop();
     }
 }
+
+void Dialog::on_startAllServerBtn_clicked()
+{
+    on_stopAllServerBtn_clicked();
+    delayMs(200);
+    on_updateDevice_clicked();
+    delayMs(200);
+
+    m_serial_wait_open.clear();
+    for(auto i = 0; i < ui->serialBox->count(); i++) {
+        m_serial_wait_open << i;       
+    }
+    if (m_serial_wait_open.empty()) {
+        return;
+    }
+    startServerDevice(m_serial_wait_open.dequeue());
+    startTimer(&timer_check_serial_wait_open, TimeoutForceStartNewDevice);
+}
+
